@@ -1,9 +1,9 @@
-import shelve, fnmatch, re
-
 import shelve
 import fnmatch
 import re
-from typing import Any, Callable, Dict, List, Tuple, Union
+from contextlib import contextmanager
+
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 class QueryConditions:
     ''' A class that provides query conditions for the ShelveDB class.'''
@@ -23,7 +23,7 @@ class QueryConditions:
         '''
         return lambda item: item[1].get(column) and comparison_fn(item[1][column], value)
 
-    # Full method names (mapped to compact versions)
+    # Full method names
     @staticmethod
     def greater_than(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column is greater than the given value.
@@ -66,7 +66,7 @@ class QueryConditions:
         '''
         return QueryConditions._generate_lambda(column, pattern, lambda x, y: re.search(y, x))
 
-    # Compact method names
+    # Compact method names (mapped to full versions)
     @staticmethod
     def gt(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Alias for greater_than.
@@ -113,77 +113,148 @@ class ShelveDB:
     ''' A class that provides CRUD operations and querying on a shelve database.
     '''
 
-    def __init__(self, file_name):
+    def __init__(self, file_name: str):
+        ''' Initialize the ShelveDB instance with the given file name.
+
+        Args:
+            file_name (str): The file name of the shelve database.
+        '''
         self.file_name = file_name
 
-    def __enter__(self):
+    def __enter__(self) -> "ShelveDB":
+        ''' Open the shelve database and return the instance when entering a context.
+
+        Returns:
+            ShelveDB: The current instance of the ShelveDB class.
+        '''
         self.db = shelve.open(self.file_name)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        ''' Close the shelve database when exiting the context.
+        '''
         self.db.close()
 
-    def new(self, value):
-        with shelve.open(self.file_name) as db:
-            keys = list(db.keys())
-            if keys:
-                last_key = max([int(key) for key in keys if key.isdigit()])
-                new_key = str(last_key + 1)
-            else:
-                new_key = "1"
-            db[new_key] = value
-            return new_key
-        
-    def insert(self, key, value):
-        ''' Insert a new key-value pair into the shelve database.
+    @contextmanager
+    def open_db(self) -> shelve.DbfilenameShelf:
+        ''' A context manager to open and close the shelve database.
+
+        Yields:
+            shelve.DbfilenameShelf: An opened shelve database.
         '''
+        # Open the shelve database with the given file name
+        db = shelve.open(self.file_name)
+
+        try:
+            # Yield the opened shelve database to the caller
+            yield db
+        finally:
+            # Close the shelve database when exiting the context,
+            # ensuring proper resource management even in case of exceptions
+            db.close()
+
+    def new(self, value: Dict[str, Any]) -> str:
+        ''' Create a new entry in the shelve database with a unique key.
+
+        Args:
+            value (Dict[str, Any]): A dictionary representing the value to be inserted.
+
+        Returns:
+            str: The newly generated unique key for the inserted value.
+        '''
+        # Use the context manager to open the shelve database
+        with self.open_db() as db:
+            # Get a list of integer keys from the database
+            keys = [int(key) for key in db.keys() if key.isdigit()]
+
+            # Calculate the new key as the maximum existing key + 1, or use "1" if there are no existing keys
+            new_key = str(max(keys) + 1) if keys else "1"
+
+            # Insert the new value into the database with the new key
+            db[new_key] = value
+
+            # Return the new key
+            return new_key
+
+    def insert(self, key: str, value: Dict[str, Any]):
+        ''' Insert a new key-value pair into the shelve database.
+
+        Args:
+            key (str): The key to use for the new entry.
+            value (Dict[str, Any]): The value to associate with the key.
+        '''
+        # Use the context manager to open and close the shelve database
         with self:
+            # Store the value with the given key in the database
             self.db[key] = value
 
-    def update(self, key, new_values):
+    def update(self, key: str, new_values: Dict[str, Any]):
         ''' Update the values of an existing key in the shelve database.
+
+        Args:
+            key (str): The key of the entry to update.
+            new_values (Dict[str, Any]): The new values to update the entry with.
         '''
+        # Use the context manager to open and close the shelve database
         with self:
+            # Check if the key exists in the database
             if key in self.db:
+                # Get the current values of the key
                 current_values = self.db[key]
+                # Update the current values with the new values
                 current_values.update(new_values)
+                # Store the updated values back in the database
                 self.db[key] = current_values
 
-    def delete(self, key):
+    def delete(self, key: str):
         ''' Delete an existing key from the shelve database.
+
+        Args:
+            key (str): The key of the entry to delete.
         '''
+        # Use the context manager to open and close the shelve database
         with self:
+            # Check if the key exists in the database
             if key in self.db:
+                # Delete the key from the database
                 del self.db[key]
 
     def clear(self):
         ''' Clear all items from the shelve database.
         '''
+        # Use the context manager to open and close the shelve database
         with self:
+            # Clear all items from the database
             self.db.clear()
 
-    def query(self, conditions=None, select_columns=None):
+    def query(self, conditions: Optional[List[Callable[[Tuple[str, Dict[str, Any]]], bool]]] = None, select_columns: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         ''' Query the shelve database with the given conditions and return the selected columns.
 
         Args:
-            conditions (List[function]): a list of lambda functions that filter the items in the database.
-            select_columns (List[str]): a list of column names to select. If None, select all columns.
+            conditions (List[function], optional): a list of lambda functions that filter the items in the database.
+            select_columns (List[str], optional): a list of column names to select. If None, select all columns.
 
         Returns:
             Dict[str, Dict[Any, Any]]: a dictionary where the keys are the selected keys and the values are dictionaries of the selected columns.
         '''
+        # If no conditions are provided, use an empty list
         if conditions is None:
             conditions = []
 
+        # Use the context manager to open and close the shelve database
         with self:
+            # Get all items from the database
             items = self.db.items()
 
+            # Apply each condition by filtering the items using the condition
             for condition in conditions:
                 items = filter(condition, items)
 
+            # If no select_columns are provided, return all columns for the filtered items
             if select_columns is None:
                 return dict(items)
 
+            # If select_columns are provided, return only the specified columns for the filtered items
             return {
                 key: {column: value[column] for column in select_columns if column in value}
                 for key, value in items
@@ -199,7 +270,7 @@ if __name__ == '__main__':
         db.insert('2', {'name': 'Alice', 'age': 30, 'city': 'Los Angeles'})
         db.insert('3', {'name': 'Bob', 'age': 40, 'city': 'Chicago'})
 
-        # Update '4' values
+        # Update '2' values
         db.update('2', {'age': 31, 'city': 'San Francisco'})
 
         # Delete '3'
@@ -208,8 +279,10 @@ if __name__ == '__main__':
         # Create a new item with a unique key
         new_item_key = db.new({'name': 'Tom', 'age': 35, 'city': 'Seattle'})
         print(f'New item created with key: {new_item_key}')
+        # RESULT: 
+        # New item created with key: 3
 
-        # Clear all data
+        # Clear all data (uncomment if you want to clear the database)
         # db.clear()
 
         # Query users with age > 30, selecting only 'name' and 'city' columns
@@ -219,3 +292,5 @@ if __name__ == '__main__':
         )
 
     print(result)
+    # RESULT: 
+    # {'2': {'name': 'Alice', 'city': 'San Francisco'}, '3': {'name': 'Tom', 'city': 'Seattle'}}
