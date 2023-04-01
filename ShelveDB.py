@@ -1,92 +1,111 @@
 import shelve, fnmatch, re
 
-class QueryConditions:
-    ''' A class that provides query conditions for the ShelveDB class.
-    '''
+import shelve
+import fnmatch
+import re
+from typing import Any, Callable, Dict, List, Tuple, Union
 
-    # Full method names
+class QueryConditions:
+    ''' A class that provides query conditions for the ShelveDB class.'''
+
     @staticmethod
-    def greater_than(column, value):
+    def _generate_lambda(column: str, value: Any, comparison_fn: Callable[[Any, Any], bool]) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        '''
+        Generates a lambda function that filters items based on the comparison function.
+
+        Args:
+            column (str): Column name to compare.
+            value (Any): Value to compare with.
+            comparison_fn (Callable[[Any, Any], bool]): Comparison function to use.
+
+        Returns:
+            Callable[[Tuple[str, Dict[str, Any]]], bool]: Lambda function for filtering.
+        '''
+        return lambda item: item[1].get(column) and comparison_fn(item[1][column], value)
+
+    # Full method names (mapped to compact versions)
+    @staticmethod
+    def greater_than(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column is greater than the given value.
         '''
-        return lambda item: item[1].get(column) and item[1][column] > value
+        return QueryConditions._generate_lambda(column, value, lambda x, y: x > y)
 
     @staticmethod
-    def equals(column, value):
+    def equals(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column is equal to the given value.
         '''
-        return lambda item: item[1].get(column) and item[1][column] == value
+        return QueryConditions._generate_lambda(column, value, lambda x, y: x == y)
 
     @staticmethod
-    def not_equals(column, value):
+    def not_equals(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column is not equal to the given value.
         '''
-        return lambda item: item[1].get(column) and item[1][column] != value
+        return QueryConditions._generate_lambda(column, value, lambda x, y: x != y)
 
     @staticmethod
-    def contains(column, value):
+    def contains(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column contains the given value.
         '''
-        return lambda item: item[1].get(column) and value in item[1][column]
+        return QueryConditions._generate_lambda(column, value, lambda x, y: y in x)
 
     @staticmethod
-    def not_contains(column, value):
+    def not_contains(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column does not contain the given value.
         '''
-        return lambda item: item[1].get(column) and value not in item[1][column]
+        return QueryConditions._generate_lambda(column, value, lambda x, y: y not in x)
 
     @staticmethod
-    def wildcard(column, pattern):
+    def wildcard(column: str, pattern: str) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column matches the given wildcard pattern.
         '''
-        return lambda item: item[1].get(column) and fnmatch.fnmatch(item[1][column], pattern)
+        return QueryConditions._generate_lambda(column, pattern, lambda x, y: fnmatch.fnmatch(x, y))
 
     @staticmethod
-    def regex(column, pattern):
+    def regex(column: str, pattern: str) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
         ''' Return a lambda function that filters items where the value of the column matches the given regex pattern.
         '''
-        return lambda item: item[1].get(column) and re.search(pattern, item[1][column])
-    
+        return QueryConditions._generate_lambda(column, pattern, lambda x, y: re.search(y, x))
+
     # Compact method names
     @staticmethod
-    def gt(column, value):
-        ''' Return a lambda function that filters items where the value of the column is greater than the given value.
+    def gt(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for greater_than.
         '''
         return QueryConditions.greater_than(column, value)
-
+        
     @staticmethod
-    def eq(column, value):
-        ''' Return a lambda function that filters items where the value of the column is equal to the given value.
+    def eq(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for equals.
         '''
         return QueryConditions.equals(column, value)
 
     @staticmethod
-    def ne(column, value):
-        ''' Return a lambda function that filters items where the value of the column is not equal to the given value.
+    def ne(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for not_equals.
         '''
         return QueryConditions.not_equals(column, value)
 
     @staticmethod
-    def ct(column, value):
-        ''' Return a lambda function that filters items where the value of the column contains the given value.
+    def ct(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for contains.
         '''
         return QueryConditions.contains(column, value)
 
     @staticmethod
-    def nct(column, value):
-        ''' Return a lambda function that filters items where the value of the column does not contain the given value.
+    def nct(column: str, value: Any) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for not_contains.
         '''
         return QueryConditions.not_contains(column, value)
 
     @staticmethod
-    def wc(column, pattern):
-        ''' Return a lambda function that filters items where the value of the column matches the given wildcard pattern.
+    def wc(column: str, pattern: str) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for wildcard.
         '''
         return QueryConditions.wildcard(column, pattern)
 
     @staticmethod
-    def re(column, pattern):
-        ''' Return a lambda function that filters items where the value of the column matches the given regex pattern.
+    def re(column: str, pattern: str) -> Callable[[Tuple[str, Dict[str, Any]]], bool]:
+        ''' Alias for regex.
         '''
         return QueryConditions.regex(column, pattern)
     
